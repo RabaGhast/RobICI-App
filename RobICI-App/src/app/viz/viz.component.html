@@ -1,0 +1,3 @@
+<button type="button" (click)='zoomOut()'>-</button>
+<button type="button" (click)='zoomIn()'>+</button>
+<div [innerHTML]="svg" id="vizBox"[style.max-height.px]='getMaxHeight()'>No Content yet</div>
