@@ -3,7 +3,7 @@ import Viz from 'viz.js';
 import { Module, render } from 'viz.js/full.render.js';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { DataService } from '../data.service';
-import { Draggable } from 'ng2draggable/draggable.directive';
+import { Draggable } from 'ng2draggable';
 
 @Component({
   selector: 'app-viz',
@@ -26,24 +26,24 @@ export class VizComponent implements OnInit {
   ngOnInit() {
     this.size = 30;
     this.zoomScale = 5;
-    this.dataService.testData();
+    // this.dataService.testData();
     this.displayViz(this.size);
   }
 
   displayViz(size: number) {
     console.log(this.size);
-    this.dataService.getGraphData(this.size).subscribe(graphData => {
+    this.dataService.getGraphString(this.size).then(graphData => {
       this.viz.renderString(graphData)
-        .then(result => {
-          this.svg = this.sanitizer.bypassSecurityTrustHtml(result);
-        })
-        .catch(error => {
-          // Create a new Viz instance (@see Caveats page for more info)
-          this.viz = new Viz({ Module, render });
+      .then(result => {
+        this.svg = this.sanitizer.bypassSecurityTrustHtml(result);
+      })
+      .catch(error => {
+        // Create a new Viz instance (@see Caveats page for more info)
+        this.viz = new Viz({ Module, render });
 
-          // Possibly display the error
-          console.error(error);
-        });
+        // Possibly display the error
+        console.error(error);
+      });
     });
   }
 

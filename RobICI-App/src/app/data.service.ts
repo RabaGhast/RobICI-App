@@ -1,94 +1,88 @@
 import { Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { HttpClient } from '@angular/common/http';
-// import Client from 'jsonrpc-websocket-client';
-// import * as WebSocketSubject from 'rxjs/observable/dom/WebSocketSubject';
-import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { GraphNode } from './Models/GraphNode';
 import { Link } from './Models/Link';
+import { JsonrpcResponse } from './Models/JsonrpcResponse';
+
 
 @Injectable({
   providedIn: 'root'
 })
 export class DataService {
 
-  socket: WebSocketSubject<any>;
-
-  graphDataString: String;
-  url: '239.255.189.43';
-  body: {
-    'jsonrpc': '2.0', 'method': 'IPS.Device.Connections',
-    'params': { 'Device': 'a1' }, 'id': 1
-  }; // might need JSON.stringify on this
-  options: {
-    url: '239.255.189.43',
-    method: 'post',
-    headers:
-    {
-      'content-type': 'application/json-rpc'
-    }
-    body: {
-      'jsonrpc': '2.0', 'method': 'IPS.Device.Connections',
-      'params': { 'Device': 'a1' }, 'id': 1
-    } // might need JSON.stringify on this
-  };
+  url: string;
+  nodeArr: Array<GraphNode>;
 
   constructor(private http: HttpClient) {
+    this.url = 'http://localhost:8090/jsonrpc';
+    this.nodeArr = new Array<GraphNode>();
   }
 
-  public getGraphData(size: number): Observable<string> {
-    this.http.post<any>('239.255.189.43', this.body, this.options).subscribe(result => {
-      console.log(result);
-    });
+  public getGraphNodeChildren(params: Object): Promise<JsonrpcResponse> {
+    const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': 'IPS.Device.Connections', 'params': params, 'id': 1 });
+    const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
+      headers: new HttpHeaders({
+        'Content-Type':  'application/json',
+      })
+    };
+    return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
+  }
 
-    const nodes = this.getTestData();
-    // const resStr = 'digraph ' + this.stringGraph(tree);
+  public async getGraph(params: Object): Promise<GraphNode> {
+    const node = new GraphNode([params['Device']], 'sensor', '', null);
+    const children = await this.getGraphNodeChildren(params);
+    for (let i = 0; i < children.result.length; i++) {
+      let childName;
+      const child = children.result[i];
+      if (child['Target'] != null) {
+        if (node.connectsTo == null) {
+          node.connectsTo = new Array<Link>();
+        }
+        childName = (child['Target'] + '').split('.')[0];
+        const childNode = await this.getGraph({ 'Device': childName });
+        node.connectsTo.push(new Link(childNode, child['Name']));
+      }
+    }
+    this.nodeArr.push(node);
+    return node;
+  }
+
+  public async getGraphString(size: number): Promise<string> {
+    this.nodeArr = new Array<GraphNode>();
+    await this.getGraph({ 'Device': 'A1' });
     const resStr = 'digraph {' + '\n'
       + this.getOptionsString(size) + '\n'
-      + this.getDeclareString('alarm', nodes) + '\n'
-      + this.getDeclareString('sensor', nodes) + '\n\n'
-      + this.getConnectionString(nodes) + '\n'
+      + this.getDeclareString('alarm', this.nodeArr) + '\n'
+      + this.getDeclareString('sensor', this.nodeArr) + '\n\n'
+      // split and filter for readability. does not affect result:
+      + this.getConnectionString(this.nodeArr).split('\n').filter(l => l.length > 1).join('\n') + '\n'
       + '}';
-    return of(resStr);
+    console.log(resStr);
+    return resStr;
   }
 
   private getOptionsString(size: number): string {
-
-    return `ratio="${(window.innerHeight / window.innerWidth).toFixed(2)} \n"` + // makes node tree fit best for current screen dimensions
-    `size="${size},${size}" \n` + // controls "zoom" level
-    `margin="2" \n`; // makes canvas big enough to display all nodes
+    const ratio = (window.innerHeight / window.innerWidth);
+    return `ratio="${ratio.toFixed(2)}"\n` + // makes node tree fit best for current screen dimensions
+      `size="${size}" \n` + // controls "zoom" level
+      `margin="2" \n` + // makes canvas big enough to display all nodes
+      `center="true"`;
   }
 
   /**
    * Gets the connection string for all nodes
    */
-  private getConnectionString(nodes: GraphNode[]): string {
+  private getConnectionString(nodes: Array<GraphNode>): string {
     let res = '';
     nodes.forEach(node => res += node.connectionStr() + '\n');
 
     return res;
   }
-  /*
-    private stringGraph(tree: object) {
-      console.log('running stringGraph');
-      let res = '{';
-      Object.keys(tree).forEach(parent => {
-        res += parent + ' -> ';
-        tree[parent].forEach(child => {
-          res += child + ', ';
-        });
-        res = res.substr(0, res.length - 2) + ';';
-      });
-      res += '}';
-      console.log(res);
-      return res;
-    }
-    */
 
   /**
    * Gets the declaration string defining the visuals for nodes of the given node type
    */
-  private getDeclareString(type: string, nodes: GraphNode[]): string {
+  private getDeclareString(type: string, nodes: Array<GraphNode>): string {
 
     let str = 'node ';
 
@@ -101,50 +95,16 @@ export class DataService {
         str += '[shape=circle,color=lightGreen,fillcolor=white];';
       }
     }
-    const selectedNodes = nodes.filter(n => n.type === type).map(n => n.name.join('')).join(';');
-    /**
-     * ERROR!!! return statement below should join GraphNode names. currently it joins GraphNode Objects!
-     * return statement below should gets all nodes of chosen type in a semi-collon separated string
-     */
+    const filteredNodes = nodes.filter(n => n.type === type);
+    if (filteredNodes.length <= 0) {
+      return '';
+    }
+    const selectedNodes = filteredNodes.map(n => n.name.join('')).join(';');
     return str + ' ' + selectedNodes + ';';
   }
 
-  public async testData() {
-    /*const url = 'http://239.255.189.43';
-    const headers = new Headers();
-    headers.append('Content-Type', 'application/json-rpc');
 
-    const params = new URLSearchParams();
-    params.append('jsonrpc', '2.0');
-    params.append('id', '1');
-    params.append('method', 'IPS.Device.Connections');
-    params.append( 'params', '{ "Device": "a1" }, "id": 1');
-
-    const options = {headers: headers, params: params};
-
-    this.http.post(url, options)
-      .subscribe(response => console.log('DID IT!', response));
-    */
-    console.log('starting websocket client!');
-
-    this.socket = webSocket('ws://239.255.189.43:10000'); // 239.255.189.43     239.255.189.43:18943     239.255.189.43:34981
-    this.socket.subscribe((message) => {
-      console.log(message);
-    },
-      (err) => console.log(err)
-    );
-    // this.socket.next(JSON.stringify('potato'));
-
-
-    // const client = new Client('ws://echo.websocket.org');
-    // console.log(client.status); // → closed
-    // await client.open();
-    // console.log(client.status); // → open
-    // onsole.log(await client.call('method', [1, 2, 3]));
-    // await client.close();
-  }
-
-  private getTestData(): GraphNode[] {
+  private getTestData(): Array<GraphNode> {
 
     /**------------- CREATING ARRAY ------------ */
 
