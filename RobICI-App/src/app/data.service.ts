@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { GraphNode } from './Models/GraphNode';
 import { Link } from './Models/Link';
+import { Signal } from './Models/Signal';
 import { JsonrpcResponse } from './Models/JsonrpcResponse';
 
 
@@ -12,17 +13,107 @@ export class DataService {
 
   url: string;
   nodeArr: Array<GraphNode>;
+  signals: Array<Signal>;
 
   constructor(private http: HttpClient) {
     this.url = 'http://localhost:8090/jsonrpc';
     this.nodeArr = new Array<GraphNode>();
+    this.signals = new Array<Signal>();
+  }
+
+  public async test(): Promise<string> {
+    console.log('Running tests');
+    let result = 'nothing';
+    const outputs = new Array<string>();
+    const params = { 'Device': 'A1' };
+    const methods = [
+      'IPS.Signal.Connections',
+      'IPS.Device.Connections',
+      'JSONRPC.ConnectionList',
+      'JSONRPC.Introspect',
+      'Application.ModuleInfo',
+      'Application.SystemInfo',
+      'System.IPAddress.Show',
+      'Signal.List'
+    ];
+
+    await this.getGraph(params).then(root => {
+      console.log('getGraph', root);
+    });
+
+    await this.readAllSignals().then(res => {
+      console.log('readAllSignals', res);
+    });
+
+    for (let i = 0; i < methods.length; i++) {
+      await this.testCall(params, methods[i]).then(res => {
+        console.log(methods[i], res.result);
+      });
+    }
+
+    if (outputs.length > 0) {
+      result = outputs.join('-------------------------');
+    }
+    return result;
+  }
+
+  // TODO: Find correct GraphNode from signal.nodeName and update values
+  public async updateSignal() {
+    this.readAllSignals();
+  }
+
+  public testCall(params: Object, method: string): Promise<JsonrpcResponse> {
+    const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': method, 'params': params, 'id': 1 });
+    const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
+      headers: new HttpHeaders({
+        'Content-Type': 'application/json',
+      })
+    };
+    return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
+  }
+
+  public async readAllSignals(): Promise<Array<Signal>> {
+    const signalArray = Array<Signal>();
+
+    const signalList = await this.getSignalList();
+
+    for (let i = 0; i < signalList.result.length; i++) {
+      const signal = signalList.result[i];
+      const signalPath = signal['path'];
+      let signalVal;
+      const val = await this.readSignal({ 'path': signalPath });
+      signalVal = val.result['Value'];
+      // signalArray.push({'path' : signal['path'], 'value': signalVal});
+      signalArray.push(new Signal(signal['path'], signalVal));
+      this.signals.push(new Signal(signal['path'], signalVal));
+    }
+    return signalArray;
+  }
+
+  public getSignalList() {
+    const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': 'Signal.List', 'id': 1 });
+    const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
+      headers: new HttpHeaders({
+        'Content-Type': 'application/json',
+      })
+    };
+    return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
+  }
+  public readSignal(params: Object): Promise<JsonrpcResponse> {
+    const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': 'Signal.Read', 'params': params, 'id': 1 });
+    const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
+      headers: new HttpHeaders({
+        'Content-Type': 'application/json',
+      })
+    };
+    return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
   }
 
   public getGraphNodeChildren(params: Object): Promise<JsonrpcResponse> {
     const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': 'IPS.Device.Connections', 'params': params, 'id': 1 });
     const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
       headers: new HttpHeaders({
-        'Content-Type':  'application/json',
+        'Content-Type': 'application/json',
       })
     };
     return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
@@ -31,6 +122,7 @@ export class DataService {
   public async getGraph(params: Object): Promise<GraphNode> {
     const node = new GraphNode([params['Device']], 'sensor', '', null);
     const children = await this.getGraphNodeChildren(params);
+    // console.log('children:', children);
     for (let i = 0; i < children.result.length; i++) {
       let childName;
       const child = children.result[i];
@@ -50,10 +142,12 @@ export class DataService {
   public async getGraphString(size: number): Promise<string> {
     this.nodeArr = new Array<GraphNode>();
     await this.getGraph({ 'Device': 'A1' });
+    await this.readAllSignals();
     const resStr = 'digraph {' + '\n'
       + this.getOptionsString(size) + '\n'
       + this.getDeclareString('alarm', this.nodeArr) + '\n'
       + this.getDeclareString('sensor', this.nodeArr) + '\n\n'
+      + this.getLabelString(this.signals, this.nodeArr) + '\n'
       // split and filter for readability. does not affect result:
       + this.getConnectionString(this.nodeArr).split('\n').filter(l => l.length > 1).join('\n') + '\n'
       + '}';
@@ -70,18 +164,8 @@ export class DataService {
   }
 
   /**
-   * Gets the connection string for all nodes
-   */
-  private getConnectionString(nodes: Array<GraphNode>): string {
-    let res = '';
-    nodes.forEach(node => res += node.connectionStr() + '\n');
-
-    return res;
-  }
-
-  /**
-   * Gets the declaration string defining the visuals for nodes of the given node type
-   */
+  * Gets the declaration string defining the visuals for nodes of the given node type
+  */
   private getDeclareString(type: string, nodes: Array<GraphNode>): string {
 
     let str = 'node ';
@@ -101,6 +185,29 @@ export class DataService {
     }
     const selectedNodes = filteredNodes.map(n => n.name.join('')).join(';');
     return str + ' ' + selectedNodes + ';';
+  }
+
+  private getLabelString(signals: Array<Signal>, nodes: Array<GraphNode>): string {
+    return nodes.map(n => this.formatLabelString(n.name[0], signals)).join('');
+  }
+
+  private formatLabelString(nodeName: string, signals: Array<Signal>) {
+    let result = '';
+    const filteredSignals = signals.filter(s => s.nodeName === nodeName && s.value != null);
+    result += `${nodeName} [label = <<b>${nodeName}</b><br/>` +
+      filteredSignals.map(s => s.valueName + ':' + s.value).join('<br/>') +
+      `>, id = "${nodeName}"];\n`;
+    return result;
+  }
+
+  /**
+   * Gets the connection string for all nodes
+   */
+  private getConnectionString(nodes: Array<GraphNode>): string {
+    let res = '';
+    nodes.forEach(node => res += node.connectionStr() + '\n');
+
+    return res;
   }
 
 
