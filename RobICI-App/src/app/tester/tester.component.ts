@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, Output } from '@angular/core';
 import { DataService } from '../data.service';
 
 @Component({
@@ -15,11 +15,23 @@ export class TesterComponent implements OnInit {
    }
 
   ngOnInit() {
-    /*
-    this.dataService.test().then(res => {
-      this.output = res;
+
+    this.dataService.signalSubscribe().subscribe({
+      next(res) {
+        console.log('subscribe next: ', res);
+        this.output = JSON.stringify(res.result);
+      }
+      ,
+      error(msg) {
+        console.log('subscribe error: ', msg);
+        this.output = JSON.stringify(msg);
+      },
+      complete() {
+        console.log('subscribe completed');
+        this.output = JSON.stringify('subscribe completed');
+      }
     });
-    */
+
   }
 
 }

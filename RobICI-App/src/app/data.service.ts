@@ -4,6 +4,7 @@ import { GraphNode } from './Models/GraphNode';
 import { Link } from './Models/Link';
 import { Signal } from './Models/Signal';
 import { JsonrpcResponse } from './Models/JsonrpcResponse';
+import { Observable } from 'rxjs';
 
 
 @Injectable({
@@ -37,24 +38,69 @@ export class DataService {
       'Signal.List'
     ];
 
-    await this.getGraph(params).then(root => {
-      console.log('getGraph', root);
-    });
+    // await this.signalSubscribe().subscribe({
+    //   next(res) {
+    //     console.log('subscribe next: ', res);
+    //     this.output = JSON.stringify(res.result);
+    //   }
+    //   // , error(msg) {
+    //   //   console.log('subscribe error: ', msg);
+    //   //   this.output = JSON.stringify(msg);
+    //   // },
+    //   // complete() {
+    //   //   console.log('subscribe completed');
+    //   //   this.output = JSON.stringify('subscribe completed');
+    //   // }
+    // });
 
-    await this.readAllSignals().then(res => {
-      console.log('readAllSignals', res);
-    });
+    // await this.testCall({path: 'A1:Connect', handle: '34'}, 'Signal.Read').then(res => {
+    //   console.log('signal:', res.result);
+    // });
 
-    for (let i = 0; i < methods.length; i++) {
-      await this.testCall(params, methods[i]).then(res => {
-        console.log(methods[i], res.result);
-      });
-    }
+
+    // await this.getGraph(params).then(root => {
+    //   console.log('getGraph', root);
+    // });
+
+    // await this.formattedAllSignals().then(res => {
+    //   console.log('readAllSignals', res);
+    // });
+
+    // this.loopSignalCheck(1000 * 5, 5);
+
+    // const body = JSON.stringify({ 'jsonrpc': '2.0', 'id': 1, 'method': 'Signal.Subscribe', 'params': {
+    //   'path': 'Board:MemUsage'
+    // }});
+    // this.http.post<JsonrpcResponse>(this.url, body).subscribe({
+    //   next(res) {
+    //       console.log('subscribe next: ', res);
+    //       this.output = JSON.stringify(res.result);
+    //     }
+    //   });
+
+
+    // for (let i = 0; i < methods.length; i++) {
+    //   await this.testCall(params, methods[i]).then(res => {
+    //     console.log(methods[i], res.result);
+    //   });
+    // }
 
     if (outputs.length > 0) {
       result = outputs.join('-------------------------');
     }
     return result;
+  }
+
+  public signalSubscribe(): Observable<JsonrpcResponse> {
+    const body = JSON.stringify({
+      'jsonrpc': '2.0', 'id': 1, 'method': 'Signal.Subscribe', 'params': {
+        'path': 'A1:Connect'
+        ,
+        'enable': false,
+        'peek': false
+      }
+    });
+    return this.http.post<JsonrpcResponse>(this.url, body);
   }
 
   // TODO: Find correct GraphNode from signal.nodeName and update values
@@ -72,8 +118,64 @@ export class DataService {
     return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
   }
 
+  public async formattedAllSignals(): Promise<Array<any>> {
+    const formattedList = new Array<any>();
+    const uniqueNames = new Array<String>();
+    const signals = await this.readAllSignals();
+
+    signals.forEach(signal => {
+      if (!(uniqueNames.filter(u => u === signal.nodeName).length > 0)) {
+        uniqueNames.push(signal.nodeName);
+      }
+    });
+    uniqueNames.forEach(name => {
+      formattedList.push({ name: name, signals: signals.filter(s => s.nodeName === name) });
+    });
+    return formattedList;
+  }
+
+  // Runs readAllSignals as initial value. Then loops for "iterations" iterations where it sleeps for
+  // "ms" seconds then readsAllSignals then compares with initial signals
+  public async loopSignalCheck(ms: number, iterations: number): Promise<void> {
+    console.log(`running loopSignalCheck with ${iterations} iterations`);
+    const signals = await this.readAllSignals();
+    for (let i = 0; i < iterations; i++) {
+      await this.delay(ms);
+      const newSignals = await this.readAllSignals();
+      const diffSignals = new Array<Signal>();
+      signals.forEach(s => {
+        const diffSignal = newSignals.filter(ns => (ns.nodeName === s.nodeName && ns.valueName === s.valueName) && ns.value !== s.value);
+        if (diffSignal.length > 0) {
+          diffSignals.concat(diffSignal);
+          diffSignal.forEach(ds => { diffSignals.push(ds); });
+        }
+      });
+      if (diffSignals.length > 0) {
+        console.log('found diff signals:',
+          diffSignals.map(ds =>
+            ({
+              name: ds.nodeName + ds.valueName,
+              oldValue: signals.find(s => s.nodeName === ds.nodeName && s.valueName === ds.valueName).value,
+              newValue: ds.value
+            }))
+        );
+        // console.log('found diff signals:\n' + diffSignals.map(ds =>
+        //   `"${ds.nodeName}:${ds.valueName}": {new value: ${ds.value}, old value: ${signals.find(
+        //     s => s.nodeName === ds.nodeName && s.valueName === ds.valueName).value}}`).join('- \n'));
+      } else {
+        console.log('same as before');
+      }
+    }
+    console.log('loopSignalCheck done');
+  }
+
+  private delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   public async readAllSignals(): Promise<Array<Signal>> {
     const signalArray = Array<Signal>();
+    this.signals = new Array<Signal>();
 
     const signalList = await this.getSignalList();
 
@@ -147,7 +249,7 @@ export class DataService {
       + this.getOptionsString(size) + '\n'
       + this.getDeclareString('alarm', this.nodeArr) + '\n'
       + this.getDeclareString('sensor', this.nodeArr) + '\n\n'
-      + this.getLabelString(this.signals, this.nodeArr) + '\n'
+      // + this.getLabelString(this.signals, this.nodeArr) + '\n'
       // split and filter for readability. does not affect result:
       + this.getConnectionString(this.nodeArr).split('\n').filter(l => l.length > 1).join('\n') + '\n'
       + '}';

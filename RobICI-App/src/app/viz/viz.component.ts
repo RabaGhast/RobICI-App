@@ -26,7 +26,7 @@ export class VizComponent implements OnInit {
   ngOnInit() {
     this.size = 30;
     this.zoomScale = 5;
-    // this.dataService.testData();
+    this.dataService.test();
     this.displayViz(this.size);
   }
 
