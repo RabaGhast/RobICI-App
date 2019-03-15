@@ -16,21 +16,21 @@ export class TesterComponent implements OnInit {
 
   ngOnInit() {
 
-    this.dataService.signalSubscribe().subscribe({
-      next(res) {
-        console.log('subscribe next: ', res);
-        this.output = JSON.stringify(res.result);
-      }
-      ,
-      error(msg) {
-        console.log('subscribe error: ', msg);
-        this.output = JSON.stringify(msg);
-      },
-      complete() {
-        console.log('subscribe completed');
-        this.output = JSON.stringify('subscribe completed');
-      }
-    });
+    // this.dataService.signalSubscribe().subscribe({
+    //   next(res) {
+    //     console.log('subscribe next: ', res);
+    //     this.output = JSON.stringify(res.result);
+    //   }
+    //   ,
+    //   error(msg) {
+    //     console.log('subscribe error: ', msg);
+    //     this.output = JSON.stringify(msg);
+    //   },
+    //   complete() {
+    //     console.log('subscribe completed');
+    //     this.output = JSON.stringify('subscribe completed');
+    //   }
+    // });
 
   }
 

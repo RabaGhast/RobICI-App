@@ -5,7 +5,9 @@ import { Link } from './Models/Link';
 import { Signal } from './Models/Signal';
 import { JsonrpcResponse } from './Models/JsonrpcResponse';
 import { Observable } from 'rxjs';
-
+import { FormatterService } from './formatter.service';
+// import Client from 'jsonrpc-websocket-client';
+import {Client as WebSocket} from 'rpc-websockets';
 
 @Injectable({
   providedIn: 'root'
@@ -13,11 +15,13 @@ import { Observable } from 'rxjs';
 export class DataService {
 
   url: string;
+  wsUrl: string;
   nodeArr: Array<GraphNode>;
   signals: Array<Signal>;
 
-  constructor(private http: HttpClient) {
-    this.url = 'http://localhost:8090/jsonrpc';
+  constructor(private http: HttpClient, private formatter: FormatterService) {
+    this.url = 'http://localhost:8080/jsonrpc';
+    this.wsUrl = 'ws://localhost:8080/jsonrpc';
     this.nodeArr = new Array<GraphNode>();
     this.signals = new Array<Signal>();
   }
@@ -67,7 +71,6 @@ export class DataService {
     // });
 
     // this.loopSignalCheck(1000 * 5, 5);
-
     // const body = JSON.stringify({ 'jsonrpc': '2.0', 'id': 1, 'method': 'Signal.Subscribe', 'params': {
     //   'path': 'Board:MemUsage'
     // }});
@@ -84,6 +87,9 @@ export class DataService {
     //     console.log(methods[i], res.result);
     //   });
     // }
+
+    // console.log('test using testCall:', await this.testCall({ 'Device': 'A1' }, methods[1]));
+    console.log('test using testSocket:', await this.testSocket({'path': 'A1:Connect'}, 'Signal.Subscribe'));
 
     if (outputs.length > 0) {
       result = outputs.join('-------------------------');
@@ -103,9 +109,31 @@ export class DataService {
     return this.http.post<JsonrpcResponse>(this.url, body);
   }
 
-  // TODO: Find correct GraphNode from signal.nodeName and update values
-  public async updateSignal() {
-    this.readAllSignals();
+
+  public async testSocket(params: object, method: string) {
+
+    const ws = new WebSocket(this.wsUrl);
+
+    ws.on('open', async () => {
+      // call an RPC method with parameters
+      const subRes = await ws.call('Signal.Subscribe', { 'path': 'A1:OnTime' });
+      console.log('WS sub response: ', subRes);
+      const subDetRes = await ws.call('Signal.Subscription', { 'rate': 1000 * 5 });
+      console.log('WS sub details response: ', subDetRes);
+
+      // subscribe to receive an event
+      ws.subscribe('Signal.OnUpdate') // this sends a request to the server. server responds with error. this step is necessary
+      .catch(error => {
+        // ignore error
+      });
+
+      // when the CTM server sends back a response with method 'Signal.OnUpdate', do callback
+      ws.on('Signal.OnUpdate', res => {
+        // updateLogic();
+        console.log({handle: res[0][0], newValue: res[0][1]});
+      });
+    });
+    // ws.close();
   }
 
   public testCall(params: Object, method: string): Promise<JsonrpcResponse> {
@@ -119,19 +147,8 @@ export class DataService {
   }
 
   public async formattedAllSignals(): Promise<Array<any>> {
-    const formattedList = new Array<any>();
-    const uniqueNames = new Array<String>();
     const signals = await this.readAllSignals();
-
-    signals.forEach(signal => {
-      if (!(uniqueNames.filter(u => u === signal.nodeName).length > 0)) {
-        uniqueNames.push(signal.nodeName);
-      }
-    });
-    uniqueNames.forEach(name => {
-      formattedList.push({ name: name, signals: signals.filter(s => s.nodeName === name) });
-    });
-    return formattedList;
+    return this.formatter.formattedAllSignals(signals);
   }
 
   // Runs readAllSignals as initial value. Then loops for "iterations" iterations where it sleeps for
@@ -154,14 +171,11 @@ export class DataService {
         console.log('found diff signals:',
           diffSignals.map(ds =>
             ({
-              name: ds.nodeName + ds.valueName,
+              name: `${ds.nodeName}:${ds.valueName}`,
               oldValue: signals.find(s => s.nodeName === ds.nodeName && s.valueName === ds.valueName).value,
               newValue: ds.value
             }))
         );
-        // console.log('found diff signals:\n' + diffSignals.map(ds =>
-        //   `"${ds.nodeName}:${ds.valueName}": {new value: ${ds.value}, old value: ${signals.find(
-        //     s => s.nodeName === ds.nodeName && s.valueName === ds.valueName).value}}`).join('- \n'));
       } else {
         console.log('same as before');
       }
@@ -192,7 +206,7 @@ export class DataService {
     return signalArray;
   }
 
-  public getSignalList() {
+  public getSignalList(): Promise<JsonrpcResponse> {
     const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': 'Signal.List', 'id': 1 });
     const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
       headers: new HttpHeaders({
@@ -224,6 +238,7 @@ export class DataService {
   public async getGraph(params: Object): Promise<GraphNode> {
     const node = new GraphNode([params['Device']], 'sensor', '', null);
     const children = await this.getGraphNodeChildren(params);
+    // console.log(params);
     // console.log('children:', children);
     for (let i = 0; i < children.result.length; i++) {
       let childName;
@@ -245,73 +260,10 @@ export class DataService {
     this.nodeArr = new Array<GraphNode>();
     await this.getGraph({ 'Device': 'A1' });
     await this.readAllSignals();
-    const resStr = 'digraph {' + '\n'
-      + this.getOptionsString(size) + '\n'
-      + this.getDeclareString('alarm', this.nodeArr) + '\n'
-      + this.getDeclareString('sensor', this.nodeArr) + '\n\n'
-      // + this.getLabelString(this.signals, this.nodeArr) + '\n'
-      // split and filter for readability. does not affect result:
-      + this.getConnectionString(this.nodeArr).split('\n').filter(l => l.length > 1).join('\n') + '\n'
-      + '}';
+    const resStr = this.formatter.formatGraphString(size, this.nodeArr);
     console.log(resStr);
     return resStr;
   }
-
-  private getOptionsString(size: number): string {
-    const ratio = (window.innerHeight / window.innerWidth);
-    return `ratio="${ratio.toFixed(2)}"\n` + // makes node tree fit best for current screen dimensions
-      `size="${size}" \n` + // controls "zoom" level
-      `margin="2" \n` + // makes canvas big enough to display all nodes
-      `center="true"`;
-  }
-
-  /**
-  * Gets the declaration string defining the visuals for nodes of the given node type
-  */
-  private getDeclareString(type: string, nodes: Array<GraphNode>): string {
-
-    let str = 'node ';
-
-    switch (type) {
-      case 'alarm': {
-        str += '[shape=diamond,style=filled,fillcolor=green,height=2,width=2];';
-        break;
-      }
-      default: {
-        str += '[shape=circle,color=lightGreen,fillcolor=white];';
-      }
-    }
-    const filteredNodes = nodes.filter(n => n.type === type);
-    if (filteredNodes.length <= 0) {
-      return '';
-    }
-    const selectedNodes = filteredNodes.map(n => n.name.join('')).join(';');
-    return str + ' ' + selectedNodes + ';';
-  }
-
-  private getLabelString(signals: Array<Signal>, nodes: Array<GraphNode>): string {
-    return nodes.map(n => this.formatLabelString(n.name[0], signals)).join('');
-  }
-
-  private formatLabelString(nodeName: string, signals: Array<Signal>) {
-    let result = '';
-    const filteredSignals = signals.filter(s => s.nodeName === nodeName && s.value != null);
-    result += `${nodeName} [label = <<b>${nodeName}</b><br/>` +
-      filteredSignals.map(s => s.valueName + ':' + s.value).join('<br/>') +
-      `>, id = "${nodeName}"];\n`;
-    return result;
-  }
-
-  /**
-   * Gets the connection string for all nodes
-   */
-  private getConnectionString(nodes: Array<GraphNode>): string {
-    let res = '';
-    nodes.forEach(node => res += node.connectionStr() + '\n');
-
-    return res;
-  }
-
 
   private getTestData(): Array<GraphNode> {
 

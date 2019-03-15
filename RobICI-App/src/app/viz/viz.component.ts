@@ -3,7 +3,6 @@ import Viz from 'viz.js';
 import { Module, render } from 'viz.js/full.render.js';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { DataService } from '../data.service';
-import { Draggable } from 'ng2draggable';
 
 @Component({
   selector: 'app-viz',
@@ -27,7 +26,7 @@ export class VizComponent implements OnInit {
     this.size = 30;
     this.zoomScale = 5;
     this.dataService.test();
-    this.displayViz(this.size);
+    // this.displayViz(this.size);
   }
 
   displayViz(size: number) {
