@@ -23,49 +23,58 @@ export class VizComponent implements OnInit {
   constructor(private sanitizer: DomSanitizer, private dataService: DataService) { }
 
   ngOnInit() {
-    this.size = 30;
+    this.size = 10;
     this.zoomScale = 5;
-    this.dataService.test();
-    // this.displayViz(this.size);
+    // this.dataService.test();
+    this.displayViz(this.size, true);
+    this.dataService.subscribeAllSignals();
+    this.dataService.signalUpdates.subscribe(s => {
+      const parent = document.getElementById(s.nodeName);
+      if (parent) {
+        parent.childNodes[7].textContent = s.value + ' ' + s.unit;
+      }
+    });
   }
 
-  displayViz(size: number) {
+  displayViz(size: number, firstTime: boolean) {
     console.log(this.size);
-    this.dataService.getGraphString(this.size).then(graphData => {
+    this.dataService.getGraphString(this.size, firstTime).then(graphData => {
+      console.log(graphData);
       this.viz.renderString(graphData)
-      .then(result => {
-        this.svg = this.sanitizer.bypassSecurityTrustHtml(result);
-      })
-      .catch(error => {
-        // Create a new Viz instance (@see Caveats page for more info)
-        this.viz = new Viz({ Module, render });
+        .then(result => {
+          this.svg = this.sanitizer.bypassSecurityTrustHtml(result);
+          if (firstTime) { console.log(graphData); }
+        })
+        .catch(error => {
+          // Create a new Viz instance (@see Caveats page for more info)
+          this.viz = new Viz({ Module, render });
 
-        // Possibly display the error
-        console.error(error);
-      });
+          // Possibly display the error
+          console.error(error);
+        });
     });
   }
 
   zoomOut() {
-    if (this.size > 20) {
+    if (this.size - this.zoomScale >= 5) {
       this.size -= this.zoomScale;
-      this.displayViz(this.size);
+      this.displayViz(this.size, false);
     }
   }
   zoomIn() {
-    if (this.size < 40) {
+    if (this.size + this.zoomScale <= 30) {
       this.size += this.zoomScale;
-      this.displayViz(this.size);
+      this.displayViz(this.size, false);
     }
   }
 
-  scrollMode(): boolean {
+  isScrolling(): boolean {
     return this.scrolling;
   }
 
-  isScrolling(): void {
+  setScrolling(bool: boolean): void {
     console.log('isScrolling: ');
-    this.scrolling = true;
+    this.scrolling = bool;
   }
 
   getMaxHeight(): number {
@@ -76,6 +85,7 @@ export class VizComponent implements OnInit {
   onKeyDown($event: KeyboardEvent) {
     if ($event.keyCode === 17) {
       document.body.style.cursor = 'zoom-in';
+      $event.preventDefault();
     } else if ($event.keyCode === 32) {
       this.scrolling = true;
       $event.preventDefault();

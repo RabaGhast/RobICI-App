@@ -7,6 +7,7 @@ import { Signal } from './Models/Signal';
 })
 export class FormatterService {
 
+  lastGraph: string;
   constructor() { }
 
   public getOptionsString(size: number): string {
@@ -42,10 +43,17 @@ export class FormatterService {
   }
 
   private getLabelString(signals: Array<Signal>, nodes: Array<GraphNode>): string {
-    return nodes.map(n => this.formatLabelString(n.name[0], signals)).join('');
+    // return nodes.map(n => this.formatLabelString(n.name[0], signals)).join('');
+    return nodes.map(n => this.formatLabelString2(n.name[0])).join('\n');
   }
 
-  private formatLabelString(nodeName: string, signals: Array<Signal>) {
+  private formatLabelString2(nodeName: string): string {
+    const result = `${nodeName} [label = <<b>${nodeName}</b><br/>SignalName: ` +
+    `SignalValue>, id = "${nodeName}"];`;
+    return result;
+  }
+
+  private formatLabelString(nodeName: string, signals: Array<Signal>): string {
     let result = '';
     const filteredSignals = signals.filter(s => s.nodeName === nodeName && s.value != null);
     result += `${nodeName} [label = <<b>${nodeName}</b><br/>` +
@@ -64,15 +72,27 @@ export class FormatterService {
     return res;
   }
 
-  public formatGraphString(size: number, nodeArray: Array<GraphNode>): string {
-    return 'digraph {' + '\n'
-      + this.getOptionsString(size) + '\n'
-      + this.getDeclareString('alarm', nodeArray) + '\n'
-      + this.getDeclareString('sensor', nodeArray) + '\n\n'
-      // + this.getLabelString(this.signals, this.nodeArr) + '\n'
-      // split and filter for readability. does not affect result:
-      + this.getConnectionString(nodeArray).split('\n').filter(l => l.length > 1).join('\n') + '\n'
-      + '}';
+  public formatGraphString(size: number, nodeArray: Array<GraphNode>, signals: Array<Signal>, refresh: boolean = false): string {
+
+    let str = 'digraph {' + '\n'
+    + this.getOptionsString(size) + '\n';
+
+    if (this.lastGraph && !refresh) {
+      str += this.lastGraph;
+      return str;
+    }
+
+    const endStr =
+    this.getDeclareString('alarm', nodeArray) + '\n'
+    + this.getDeclareString('sensor', nodeArray) + '\n\n'
+     + this.getLabelString(signals, nodeArray) + '\n'
+    // split and filter for readability. does not affect result:
+    + this.getConnectionString(nodeArray).split('\n').filter(l => l.length > 1).join('\n') + '\n'
+    + '}';
+
+    console.warn('drawing as new');
+    this.lastGraph = endStr;
+    return str +  endStr;
   }
 
   public async formattedAllSignals(signals: Array<Signal>): Promise<Array<any>> {
