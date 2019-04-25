@@ -20,6 +20,7 @@ export class DataService {
   signalUpdates: Subject<Signal>;
   ws: WebSocket;
   handleDict: Array<{handle: number, signal: Signal}>;
+  hasAlerted: boolean;
 
   constructor(private http: HttpClient, private formatter: FormatterService) {
     this.url = 'http://localhost:8080/jsonrpc';
@@ -92,6 +93,10 @@ export class DataService {
 
   public async subscribeAllSignals() {
     await this.ws.on('open', async () => {
+      if(this.hasAlerted) {
+        console.warn('should now restart everything!!!')
+      }
+      this.hasAlerted = false;
       await this.readAllSignals();
       await this.handleSubscriptions();
       this.enableSubscriptions();
@@ -192,12 +197,27 @@ export class DataService {
   public async getGraphString(size: number, firstTime: boolean): Promise<string> {
     this.nodeArr = new Array<GraphNode>();
     // wait until everything done before returning:
+    this.ws.on('error', (error) => {
+      console.error(error);
+      if(!this.hasAlerted) {
+        alert(`Error! Websockets threw error when sending request to ${error.target.url}. Is the CTM Server available?`)
+        this.hasAlerted = true;
+      }
+      console.warn('ws error!')
+    });
+    this.ws.on('connection', (res) => {
+      console.warn('ws connection!')
+    });
+    this.ws.on('listening', (res) => {
+      console.warn('ws listening!')
+    });
     if (firstTime) {
       return new Promise(resolveString => {
         // wait until websocket is open before continuing:
         new Promise(resolveOpen => {
           this.ws.on('open', resolveOpen);
         }).then(async () => {
+          console.warn('ws opening!')
           await this.getGraph({ 'Device': 'A1' });
           await this.readAllSignals();
           resolveString(this.formatter.formatGraphString(size, this.nodeArr, this.signals, firstTime));

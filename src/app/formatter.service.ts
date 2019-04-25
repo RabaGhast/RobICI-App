@@ -48,8 +48,7 @@ export class FormatterService {
   }
 
   private formatLabelString2(nodeName: string): string {
-    const result = `${nodeName} [label = <<b>${nodeName}</b><br/>SignalName: ` +
-    `SignalValue>, id = "${nodeName}"];`;
+    const result = `${nodeName} [label = <<b>${nodeName}</b><br/>signalValue>, id = "${nodeName}"];`;
     return result;
   }
 

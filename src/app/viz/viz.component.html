@@ -1,3 +1,4 @@
-<button type="button" (click)='zoomOut()'>-</button>
-<button type="button" (click)='zoomIn()'>+</button>
-<div [innerHTML]="svg" id="vizBox"[style.max-height.px]='getMaxHeight()'>No Content yet</div>
+<!--<button type="button" (click)='zoomOut()'>-</button>
+<button type="button" (click)='zoomIn()'>+</button>-->
+<hr style="border:none; border-bottom: 1px solid #b4b4b4;">
+<div [innerHTML]="svg" id="vizBox"[style.max-height.px]='getMaxHeight()' (load)='attachSVGFunctionality()'>No Content yet</div>
