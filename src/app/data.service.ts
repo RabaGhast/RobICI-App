@@ -3,17 +3,16 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { GraphNode } from './Models/GraphNode';
 import { Link } from './Models/Link';
 import { Signal } from './Models/Signal';
-import { JsonrpcResponse } from './Models/JsonrpcResponse';
 import { Observable, Subject, Subscription } from 'rxjs';
 import { FormatterService } from './formatter.service';
 import { Client as WebSocket } from 'rpc-websockets';
+import { environment } from 'src/environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DataService {
 
-  url: string;
   wsUrl: string;
   nodeArr: Array<GraphNode>;
   signals: Array<Signal>;
@@ -23,8 +22,7 @@ export class DataService {
   hasAlerted: boolean;
 
   constructor(private http: HttpClient, private formatter: FormatterService) {
-    this.url = 'http://localhost:8080/jsonrpc';
-    this.wsUrl = 'ws://localhost:8080/jsonrpc';
+    this.wsUrl = environment.websocket_url;
     this.nodeArr = new Array<GraphNode>();
     this.signals = new Array<Signal>();
     this.signalUpdates = new Subject<Signal>();
@@ -90,7 +88,6 @@ export class DataService {
     });
   }
 
-
   public async subscribeAllSignals() {
     await this.ws.on('open', async () => {
       if(this.hasAlerted) {
@@ -105,16 +102,6 @@ export class DataService {
       }
     });
     // ws.close();
-  }
-
-  public testCall(params: Object, method: string): Promise<JsonrpcResponse> {
-    const body = JSON.stringify({ 'jsonrpc': '2.0', 'method': method, 'params': params, 'id': 1 });
-    const httpOptions = { // post request works without (when using chrome extension). adding httpOptions to post request breaks request.
-      headers: new HttpHeaders({
-        'Content-Type': 'application/json',
-      })
-    };
-    return this.http.post<JsonrpcResponse>(this.url, body).toPromise();
   }
 
   public async formattedAllSignals(): Promise<Array<any>> {
@@ -190,6 +177,9 @@ export class DataService {
         node.connectsTo.push(new Link(childNode, child['Name']));
       }
     }
+    // if (children.length <= 0) { // this turns all leaf nodes into alarms (for testing).
+    //   node.type = 'alarm';
+    // }
     this.nodeArr.push(node);
     return node;
   }
@@ -205,10 +195,10 @@ export class DataService {
       }
       console.warn('ws error!')
     });
-    this.ws.on('connection', (res) => {
+    this.ws.on('connection', () => {
       console.warn('ws connection!')
     });
-    this.ws.on('listening', (res) => {
+    this.ws.on('listening', () => {
       console.warn('ws listening!')
     });
     if (firstTime) {
@@ -218,7 +208,7 @@ export class DataService {
           this.ws.on('open', resolveOpen);
         }).then(async () => {
           console.warn('ws opening!')
-          await this.getGraph({ 'Device': 'A1' });
+          await this.getGraph({ 'Device': environment.root_node });
           await this.readAllSignals();
           resolveString(this.formatter.formatGraphString(size, this.nodeArr, this.signals, firstTime));
         });

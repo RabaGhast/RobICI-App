@@ -12,12 +12,15 @@ export class GraphNode {
      */
     public connectionStr(): string {
         if (this.connectsTo == null) { return ''; }
+        /* OLD solution:
         let res = `${this.name.join('')}->`;
         this.connectsTo.forEach(link => {
             res += `${link.to.name.join('')},`;
         });
         res = res.substring(0, res.length - 1) + ';'; // replace last comma with semi-colon
         return res;
+        */
+        return this.connectsTo.map(l => this.name.join('') + '->' + l.to.name.join('') + '[label=' + l.label + '];\n').join('');
     }
 
     constructor(name: Array<string>, type: string, status: string, connectsTo: Array<Link>) {

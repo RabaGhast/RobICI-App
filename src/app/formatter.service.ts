@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { GraphNode } from './Models/GraphNode';
 import { Signal } from './Models/Signal';
+import { environment } from 'src/environments/environment';
 
 @Injectable({
   providedIn: 'root'
@@ -14,7 +15,7 @@ export class FormatterService {
     const ratio = (window.innerHeight / window.innerWidth);
     return `ratio="${ratio.toFixed(2)}"\n` + // makes node tree fit best for current screen dimensions
       `size="${size}" \n` + // controls "zoom" level
-      `margin="2" \n` + // makes canvas big enough to display all nodes
+      `margin="${environment.graph_display_settings.margin}" \n` + // makes canvas big enough to display all nodes
       `center="true"`;
   }
 
@@ -24,14 +25,15 @@ export class FormatterService {
   public getDeclareString(type: string, nodes: Array<GraphNode>): string {
 
     let str = 'node ';
-
+    let alarmSettings = environment.node_style_settings.alarm;
+    let sensorSettings = environment.node_style_settings.sensor;
     switch (type) {
       case 'alarm': {
-        str += '[shape=diamond,style=filled,fillcolor=green,height=2,width=2];';
+        str += `[shape=${alarmSettings.shape},color="${alarmSettings.edge_color}",fill="${alarmSettings.color_off}",height=${alarmSettings.height},width=${alarmSettings.width}];`;
         break;
       }
       default: {
-        str += '[shape=circle,color=lightGreen,fillcolor=white];';
+        str += `[shape=${sensorSettings.shape},color="${sensorSettings.edge_color}",fill="${sensorSettings.color}"];`;
       }
     }
     const filteredNodes = nodes.filter(n => n.type === type);

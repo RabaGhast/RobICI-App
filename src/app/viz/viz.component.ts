@@ -1,12 +1,11 @@
-import { Component, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import Viz from 'viz.js';
 import { Module, render } from 'viz.js/full.render.js';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { DataService } from '../data.service';
 import * as svgPanZoomNamespace from 'svg-pan-zoom';
-import { $ } from 'protractor';
-import { stringify } from '@angular/compiler/src/util';
 import { Signal } from '../Models/Signal';
+import { environment } from 'src/environments/environment';
 
 
 @Component({
@@ -26,22 +25,21 @@ export class VizComponent implements OnInit {
   zoomScale: number;
   public scheme: SvgPanZoom.Instance;
   animateUpdates = true;
-  animConf = { // controls opacity for update animation
-    minFill: 0,
-    maxFill: .8,
-    fps: 30,
-    cooldown: 1,
-    inc: () => {return (this.animConf.maxFill-this.animConf.minFill)/(this.animConf.fps*this.animConf.cooldown)},
-    freq: () => { return 1000/this.animConf.fps }
-  }
+  showAlarmColor = true;
+  animConf: any;
   //@ViewChild('svg') public canvas: ElementRef;
 
   constructor(private sanitizer: DomSanitizer, private dataService: DataService) { }
 
   ngOnInit() {
-    this.size = 30;
-    this.zoomScale = 5;
-    // this.dataService.test();
+    this.size = environment.graph_display_settings.size;
+    this.animConf = environment.node_animation_settings;
+    this.animConf.inc = () => {return (this.animConf.maxFill-this.animConf.minFill)/(this.animConf.fps*this.animConf.cooldown)};
+    this.animConf.freq = () => { return 1000/this.animConf.fps }
+    /* IF ON MOBILE: UNCOMMENT THIS SECTION AND COMMENT DISPLAYVIZ LINE BELOW.
+    const graphData = 'digraph { ratio="0.72" size="30" margin="2" center="true" node [shape=circle,color=red,fillcolor=white]; A1NeedleOut;A1Needle;A1M1Out;A1M1;A1Pump1;A1M2Out;A1M2;A1Pump2;A1Fluid1;A1Fluid;A1Atom;A1ShapeIPOut;A1ShapeIP;A1ShapePSensor;A1ShapePS;A1ShapeDPSensor;A1ShapeDPS;A1ShapeFS;A1Shape;A1; A1NeedleOut [label = <<b>A1NeedleOut</b><br/>signalValue>, id = "A1NeedleOut"]; A1Needle [label = <<b>A1Needle</b><br/>signalValue>, id = "A1Needle"]; A1M1Out [label = <<b>A1M1Out</b><br/>signalValue>, id = "A1M1Out"]; A1M1 [label = <<b>A1M1</b><br/>signalValue>, id = "A1M1"]; A1Pump1 [label = <<b>A1Pump1</b><br/>signalValue>, id = "A1Pump1"]; A1M2Out [label = <<b>A1M2Out</b><br/>signalValue>, id = "A1M2Out"]; A1M2 [label = <<b>A1M2</b><br/>signalValue>, id = "A1M2"]; A1Pump2 [label = <<b>A1Pump2</b><br/>signalValue>, id = "A1Pump2"]; A1Fluid1 [label = <<b>A1Fluid1</b><br/>signalValue>, id = "A1Fluid1"]; A1Fluid [label = <<b>A1Fluid</b><br/>signalValue>, id = "A1Fluid"]; A1Atom [label = <<b>A1Atom</b><br/>signalValue>, id = "A1Atom"]; A1ShapeIPOut [label = <<b>A1ShapeIPOut</b><br/>signalValue>, id = "A1ShapeIPOut"]; A1ShapeIP [label = <<b>A1ShapeIP</b><br/>signalValue>, id = "A1ShapeIP"]; A1ShapePSensor [label = <<b>A1ShapePSensor</b><br/>signalValue>, id = "A1ShapePSensor"]; A1ShapePS [label = <<b>A1ShapePS</b><br/>signalValue>, id = "A1ShapePS"]; A1ShapeDPSensor [label = <<b>A1ShapeDPSensor</b><br/>signalValue>, id = "A1ShapeDPSensor"]; A1ShapeDPS [label = <<b>A1ShapeDPS</b><br/>signalValue>, id = "A1ShapeDPS"]; A1ShapeFS [label = <<b>A1ShapeFS</b><br/>signalValue>, id = "A1ShapeFS"]; A1Shape [label = <<b>A1Shape</b><br/>signalValue>, id = "A1Shape"]; A1 [label = <<b>A1</b><br/>signalValue>, id = "A1"]; A1Needle->A1NeedleOut[label=Output]; A1M1->A1M1Out[label=Output]; A1Pump1->A1M1[label=Output]; A1M2->A1M2Out[label=Output]; A1Pump2->A1M2[label=Output]; A1Fluid1->A1Pump1[label=CompA]; A1Fluid1->A1Pump2[label=CompB]; A1Fluid->A1Fluid1[label=Output]; A1ShapeIP->A1ShapeIPOut[label=Output]; A1ShapePS->A1ShapePSensor[label=Input]; A1ShapeDPS->A1ShapeDPSensor[label=Input]; A1ShapeFS->A1ShapePS[label=Press]; A1ShapeFS->A1ShapeDPS[label=Delta]; A1Shape->A1ShapeIP[label=Output]; A1Shape->A1ShapeFS[label=Actual]; A1->A1Needle[label=Needle]; A1->A1Fluid[label=Fluid]; A1->A1Atom[label=Atom]; A1->A1Shape[label=Shape]; }'
+    this.viz.renderString(graphData).then(result => { this.svg = this.sanitizer.bypassSecurityTrustHtml(result); })
+    */
     this.displayViz(this.size, true);
     this.dataService.subscribeAllSignals();
     this.dataService.signalUpdates.subscribe(s => {
@@ -58,11 +56,15 @@ export class VizComponent implements OnInit {
   }
 
   updateValue(signal: Signal, parent: HTMLElement) {
-    parent.childNodes[7].textContent = signal.value + ' ' + signal.unit;
-    const ellipse = parent.getElementsByTagName('ellipse')[0];
-
+    if(signal.unit == undefined) {
+      parent.childNodes[7].textContent = signal.value + '';
+    } else {
+      parent.childNodes[7].textContent = signal.value + ' ' + signal.unit;
+    }
+    let ellipse = parent.getElementsByTagName('ellipse')[0];
+    let diamond = parent.getElementsByTagName('polygon')[0];
     // if animations are enabled
-    if(this.animateUpdates) {
+    if(this.animateUpdates && ellipse) {
       // change opacity
       ellipse.setAttribute('fill-opacity', this.animConf.minFill+'');
       // run animation function if it's not already running
@@ -70,7 +72,17 @@ export class VizComponent implements OnInit {
         ellipse.setAttribute('animating', 'true');
         this.animate(ellipse);
       }
-    }    
+    }
+    if(this.showAlarmColor && diamond) {
+      
+      if(signal.value == 0) { // 0 means no alarm. change for correct value when in use.
+        diamond.setAttribute('fill', environment.node_style_settings.alarm.color_off); // green
+        parent.childNodes[7].textContent = 'False';
+      } else {
+        diamond.setAttribute('fill', environment.node_style_settings.alarm.color_on); // red
+        parent.childNodes[7].textContent = 'True';
+      }
+    }
   }
 
   async animate(ellipse: SVGEllipseElement): Promise<void> {
@@ -86,7 +98,7 @@ export class VizComponent implements OnInit {
   displayViz(size: number, firstTime: boolean) {
     //console.log(this.size);
     this.dataService.getGraphString(this.size, firstTime).then(graphData => {
-      //console.log(graphData);
+      console.log(graphData);
       this.viz.renderString(graphData)
         .then(result => {
           this.svg = this.sanitizer.bypassSecurityTrustHtml(result);
@@ -105,29 +117,17 @@ export class VizComponent implements OnInit {
   // Allow for pan and zoom, and fix text issues
   async fixCanvas() {
     while(document.getElementsByTagName('svg').length <= 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, environment.zoom_scale_timeout));
     }
 
     // add SVG pan and zoom functionality
     const canvas = document.getElementsByTagName('svg')[0];
-    this.scheme = svgPanZoomNamespace(canvas, {
-      zoomScaleSensitivity: 0.9,
-      minZoom: .5,
-      maxZoom: 2,
-      dblClickZoomEnabled: false,
-      fit: false,
-      contain: true
-    });
+    this.scheme = svgPanZoomNamespace(canvas, environment.zoom_scale_settings);
 
-
-    this.scheme.zoom(.5);
-    this.scheme.fit();
-
-
-    // fixing node color
+    // fixing node color - Viz.js seems to not display color correctly. This fix is not necessary in other GraphViz environments
     const ellipses = document.getElementsByTagName('ellipse');
     for(let i = 0; i < ellipses.length; i++) {
-      ellipses[i].setAttribute('fill', 'lightGreen');
+      ellipses[i].setAttribute('fill', environment.node_style_settings.sensor.color);
       ellipses[i].setAttribute('fill-opacity', this.animConf.maxFill+'');
       ellipses[i].setAttribute('animating', 'false');
     }
@@ -135,9 +135,9 @@ export class VizComponent implements OnInit {
     // fix node text
     const texts = document.getElementsByTagName('text');
     for(let i = 0; i < texts.length; i++) {
-      // fix horrible viz.js font
-      texts[i].style.fontFamily = "'Roboto', sans-serif";
-      // remove empty "SignalName: SignalValue" fields
+      // change viz.js font
+      texts[i].style.fontFamily = environment.node_style_settings.font;
+      // remove empty "SignalName: SignalValue" placeholder fields fields
       if(texts[i].innerHTML == 'signalValue') {
         texts[i].innerHTML = '';
         texts[i].setAttribute('text-anchor', 'middle');
@@ -146,72 +146,9 @@ export class VizComponent implements OnInit {
         
       }
     }    
-    
   }
 
   getMaxHeight(): number {
     return window.outerHeight;
   }
-
-  /*
-  zoomOut() {
-    if (this.size - this.zoomScale >= 5) {
-      this.size -= this.zoomScale;
-      this.displayViz(this.size, false);
-    }
-  }
-  zoomIn() {
-    if (this.size + this.zoomScale <= 30) {
-      this.size += this.zoomScale;
-      this.displayViz(this.size, false);
-    }
-  }
-
-  isScrolling(): boolean {
-    return this.scrolling;
-  }
-
-  setScrolling(bool: boolean): void {
-    console.log('isScrolling: ');
-    this.scrolling = bool;
-  }
-
-  @HostListener('window:keydown', ['$event'])
-  onKeyDown($event: KeyboardEvent) {
-    if ($event.keyCode === 17) {
-      document.body.style.cursor = 'zoom-in';
-      $event.preventDefault();
-    } else if ($event.keyCode === 32) {
-      this.scrolling = true;
-      $event.preventDefault();
-      document.body.style.cursor = 'move';
-    }
-  }
-  @HostListener('window:keyup', ['$event'])
-  onKeyUp($event: KeyboardEvent) {
-    document.body.style.cursor = 'default';
-    if ($event.keyCode === 32) {
-      this.scrolling = false;
-      this.mousePosX = null;
-      this.mousePosY = null;
-    }
-  }
-
-  @HostListener('document:mousemove', ['$event'])
-  onMouseMove(e) {
-    if (!this.scrolling) {
-      return;
-    }
-    if (this.mousePosX != null) {
-      const scrollSpeed = 3;
-      const scrollX = (this.mousePosX - e.screenX) * scrollSpeed;
-      const scrollY = (this.mousePosY - e.screenY) * scrollSpeed;
-      document.getElementById('vizBox').scrollLeft += scrollX;
-      document.getElementById('vizBox').scrollTop += scrollY;
-    }
-    this.mousePosX = e.screenX;
-    this.mousePosY = e.screenY;
-
-  }
-  */
 }
