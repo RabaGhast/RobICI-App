@@ -41,7 +41,7 @@ export const environment = {
   zoom_scale_timeout: 100,        // retry interval for activating zoom and scale functionality in milliseconds
   zoom_scale_settings: { 
     zoomScaleSensitivity: 0.5,    // scroll wheel sensitivity.
-    minZoom: .4,                  // lower value -> can zoom out farther
+    minZoom: .2,                  // lower value -> can zoom out farther
     maxZoom: 2,                   // higher value -> can zoom in farther
     dblClickZoomEnabled: false,   // activate doubleClick to zoom in
     fit: false,                 

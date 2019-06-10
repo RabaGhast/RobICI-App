@@ -2,3 +2,25 @@
 #vizBox {
     overflow: hidden;
 }
+
+#controls {
+    position: fixed;
+    //width: 100%;
+    bottom: 20px;
+    right: 20px;
+}
+button {
+    background-color: lightgreen; /* Green */
+    border: none;
+    border-radius: 10%;
+    width: 40px;
+    height: 40px;
+    color: white;
+    margin: 2px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 40px;
+    margin: 4px 2px;
+    cursor: pointer;
+}
