@@ -30,40 +30,95 @@ export class DataService {
     this.handleDict = new Array<{handle: number, signal: Signal}>();
   }
 
-  private addSignalUpdate(signal: Signal) {
-    this.signalUpdates.next(signal);
-  }
+  /*-------------------------------- Graph data -------------------------------------*/
 
-  public async test() {
-    console.log('Running tests');
-  }
-
-
-  public async enableSubscriptions(): Promise<void> {
-    await this.ws.subscribe('Signal.OnUpdate') // this sends a request to the server. server responds with error. this step is necessary
-      .catch(error => {
-        // ignore error
+  public async getGraphString(): Promise<string> {
+    this.nodeArr = new Array<GraphNode>();
+    // wait until everything done before returning:
+    this.ws.on('error', (error) => {
+      console.error(error);
+      if (!this.hasAlerted) {
+        alert(`Error! Websockets threw error when sending request to ${error.target.url}. Is the CTM Server available?`)
+        this.hasAlerted = true;
+      }
+      console.warn('ws error!')
+    });
+    this.ws.on('connection', () => {
+      console.warn('ws connection!')
+    });
+    this.ws.on('listening', () => {
+      console.warn('ws listening!')
+    });
+    return new Promise(resolveString => {
+      // wait until websocket is open before continuing:
+      new Promise(resolveOpen => {
+        this.ws.on('open', resolveOpen);
+      }).then(async () => {
+        console.warn('ws opening!')
+        await this.getGraphStructure({ 'Device': environment.root_node });
+        //await this.readAllSignals(); // <- Does not need to run this. It improves speed slightly by requesting an initial set of signals.
+        resolveString(this.formatter.formatGraphString(this.nodeArr));
       });
+    });
   }
 
-  public async disableSubscriptions(ws: WebSocket): Promise<void> {
-    await ws.unsubscribe('Signal.OnUpdate') // this sends a request to the server. server responds with error. this step is necessary
-      .catch(error => {
-        // ignore error
-      });
-  }
-
-  public async signalSubscribe(signal: Signal, rateInSeconds: number = null): Promise<void> {
-    const signalIdx = this.signals.findIndex(s => s === signal);
-    // console.log('signalSubscribe signal:', signal, '. signalIdx:', signalIdx);
-    if (rateInSeconds) {
-      await this.ws.call('Signal.Subscription', { 'rate': 1000 * rateInSeconds });
+  private async getGraphStructure(params: Object): Promise<GraphNode> {
+    const node = new GraphNode([params['Device']], 'sensor', '', null);
+    const children = await this.ws.call('IPS.Device.Connections', params); // get children of node in "params". children contains a list of out-edges with a label and a target node.
+    for (let i = 0; i < children.length; i++) {
+      let childName;
+      const child = children[i];
+      console.log(node.name, child);
+      if (child['Target'] != null) { // if this actually is a child node. for some reason, some connections have no target node.
+        if (node.outEdges == null) {
+          node.outEdges = new Array<Link>();
+        }
+        childName = (child['Target'] + '').split('.')[0];
+        const childNode = await this.getGraphStructure({ 'Device': childName });
+        node.outEdges.push(new Link(childNode, child['Name']));
+      }
     }
-    this.signals[signalIdx].handle = -1;
-    return await this.ws.call('Signal.Subscribe', { 'path': signal.nodeName + ':' + signal.valueName });
+    if (children.length <= 0) { // this turns all leaf nodes into alarms (for testing).
+      node.type = 'alarm';
+    }
+    this.nodeArr.push(node);
+    return node;
   }
 
-  public async handleSubscriptions(): Promise<void> {
+  /*-------------------------------- Subscriptions -------------------------------------*/
+
+  public async subscribeAllSignals() {
+    await this.ws.on('open', async () => {
+      if(this.hasAlerted) {
+        console.warn('should now restart everything!!!')
+      }
+      this.hasAlerted = false;
+      await this.fetchAllSignals();
+      await this.handleSubscriptions();
+      this.enableSubscriptions();
+      this.signals.forEach(async s => {
+        await this.signalSubscribe(s);
+      });
+    });
+    // ws.close();
+  }
+
+  private async fetchAllSignals(): Promise<void> {
+    this.signals = new Array<Signal>();
+
+    let signalList = await this.ws.call('Signal.List', {}) as Array<{ path: string, type: string, unit: string }>;
+
+    // only keep "SetPoint" and "Value" named signals
+    signalList = signalList.filter(s => s.path.split(':')[1] === 'SetPoint' || s.path.split(':')[1] === 'Value');
+
+    signalList.forEach(s => {
+      const signal = new Signal(s.path, null, s.unit);
+      this.signals.push(signal);
+    });
+    return;
+  }
+
+  private async handleSubscriptions(): Promise<void> {
     await this.ws.on('Signal.OnUpdate', res => {
       res.forEach(r => {
         const resHandle = r[0];
@@ -88,135 +143,38 @@ export class DataService {
     });
   }
 
-  public async subscribeAllSignals() {
-    await this.ws.on('open', async () => {
-      if(this.hasAlerted) {
-        console.warn('should now restart everything!!!')
-      }
-      this.hasAlerted = false;
-      await this.readAllSignals();
-      await this.handleSubscriptions();
-      this.enableSubscriptions();
-      for (let i = 0; i < this.signals.length; i++) {
-        await this.signalSubscribe(this.signals[i]);
-      }
-    });
-    // ws.close();
+  private addSignalUpdate(signal: Signal) {
+    this.signalUpdates.next(signal);
   }
 
-  public async formattedAllSignals(): Promise<Array<any>> {
-    const signals = await this.readAllSignals();
-    return this.formatter.formattedAllSignals(signals);
-  }
-
-  // Runs readAllSignals as initial value. Then loops for "iterations" iterations where it sleeps for
-  // "ms" seconds then readsAllSignals then compares with initial signals
-  public async loopSignalCheck(ms: number, iterations: number): Promise<void> {
-    console.log(`running loopSignalCheck with ${iterations} iterations`);
-    const signals = await this.readAllSignals();
-    for (let i = 0; i < iterations; i++) {
-      await this.delay(ms);
-      const newSignals = await this.readAllSignals();
-      const diffSignals = new Array<Signal>();
-      signals.forEach(s => {
-        const diffSignal = newSignals.filter(ns => (ns.nodeName === s.nodeName && ns.valueName === s.valueName) && ns.value !== s.value);
-        if (diffSignal.length > 0) {
-          diffSignals.concat(diffSignal);
-          diffSignal.forEach(ds => { diffSignals.push(ds); });
-        }
+  private async enableSubscriptions(): Promise<void> {
+    await this.ws.call('Signal.Subscription', { 'rate': environment.subscription_interval }); // Tells the server how often it should send updates
+    await this.ws.subscribe('Signal.OnUpdate') // this sends a request to the server. server responds with error. this step is necessary
+      .catch(error => {
+        // ignore error
       });
-      if (diffSignals.length > 0) {
-        console.log('found diff signals:',
-          diffSignals.map(ds =>
-            ({
-              name: `${ds.nodeName}:${ds.valueName}`,
-              oldValue: signals.find(s => s.nodeName === ds.nodeName && s.valueName === ds.valueName).value,
-              newValue: ds.value
-            }))
-        );
-      } else {
-        console.log('same as before');
-      }
-    }
-    console.log('loopSignalCheck done');
   }
 
-  private delay(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  public async readAllSignals(): Promise<Array<Signal>> {
-    const signalArray = Array<Signal>();
-    this.signals = new Array<Signal>();
-
-    let signalList = await this.ws.call('Signal.List', {}) as Array<{ path: string, type: string, unit: string }>;
-
-    // only keep "SetPoint" and "Value" named signals
-    signalList = signalList.filter(s => s.path.split(':')[1] === 'SetPoint' || s.path.split(':')[1] === 'Value');
-
-    signalList.forEach(s => {
-      const signal = new Signal(s.path, null, s.unit);
-      signalArray.push(signal);
-      this.signals.push(signal);
-    });
-    return signalArray;
-  }
-
-  public async getGraph(params: Object): Promise<GraphNode> {
-    const node = new GraphNode([params['Device']], 'sensor', '', null);
-    const children = await this.ws.call('IPS.Device.Connections', params); // get children of node in "params"
-    for (let i = 0; i < children.length; i++) {
-      let childName;
-      const child = children[i];
-      if (child['Target'] != null) {
-        if (node.connectsTo == null) {
-          node.connectsTo = new Array<Link>();
-        }
-        childName = (child['Target'] + '').split('.')[0];
-        const childNode = await this.getGraph({ 'Device': childName });
-        node.connectsTo.push(new Link(childNode, child['Name']));
-      }
-    }
-    // if (children.length <= 0) { // this turns all leaf nodes into alarms (for testing).
-    //   node.type = 'alarm';
-    // }
-    this.nodeArr.push(node);
-    return node;
-  }
-
-  public async getGraphString(size: number, firstTime: boolean): Promise<string> {
-    this.nodeArr = new Array<GraphNode>();
-    // wait until everything done before returning:
-    this.ws.on('error', (error) => {
-      console.error(error);
-      if(!this.hasAlerted) {
-        alert(`Error! Websockets threw error when sending request to ${error.target.url}. Is the CTM Server available?`)
-        this.hasAlerted = true;
-      }
-      console.warn('ws error!')
-    });
-    this.ws.on('connection', () => {
-      console.warn('ws connection!')
-    });
-    this.ws.on('listening', () => {
-      console.warn('ws listening!')
-    });
-    if (firstTime) {
-      return new Promise(resolveString => {
-        // wait until websocket is open before continuing:
-        new Promise(resolveOpen => {
-          this.ws.on('open', resolveOpen);
-        }).then(async () => {
-          console.warn('ws opening!')
-          await this.getGraph({ 'Device': environment.root_node });
-          await this.readAllSignals();
-          resolveString(this.formatter.formatGraphString(size, this.nodeArr, this.signals, firstTime));
-        });
+  // not currently used but might be useful
+  private async disableSubscriptions(ws: WebSocket): Promise<void> {
+    await ws.unsubscribe('Signal.OnUpdate') // this sends a request to the server. server responds with error. this step is necessary
+      .catch(error => {
+        // ignore error
       });
-    } else {
-      return new Promise(resolveString => {
-        resolveString(this.formatter.formatGraphString(size, this.nodeArr, this.signals, firstTime));
-      });
-    }
   }
+
+  private async signalSubscribe(signal: Signal): Promise<void> {
+    const signalIdx = this.signals.findIndex(s => s === signal);
+    this.signals[signalIdx].handle = -1;
+    return await this.ws.call('Signal.Subscribe', { 'path': signal.nodeName + ':' + signal.valueName });
+  }
+
+  // // NOTE: TESTING
+  // public async getAllSignalValues() {
+  //   const list = new Array<any>();
+  //   this.signals.forEach(async s => {
+  //     this.ws.call('Signal.List', {}) as Array<{ path: string, type: string, unit: string }>;
+  //   });
+  // }
+  
 }
