@@ -68,7 +68,6 @@ export class DataService {
     for (let i = 0; i < children.length; i++) {
       let childName;
       const child = children[i];
-      console.log(node.name, child);
       if (child['Target'] != null) { // if this actually is a child node. for some reason, some connections have no target node.
         if (node.outEdges == null) {
           node.outEdges = new Array<Link>();
@@ -78,8 +77,13 @@ export class DataService {
         node.outEdges.push(new Link(childNode, child['Name']));
       }
     }
-    if (children.length <= 0) { // this turns all leaf nodes into alarms (for testing).
+    // alternative to the below alarm check: check if unit is defined for signal in fetchAllSignals. Seems to coincide with this check
+    // it also feels more right that an alarm has no unit of measurement. The below check seems more arbitrary (but orig solution used this though)
+    const isAlarm = !(children.length > 0 && children.filter(c => c['Target'] != null).length > 0 || children.filter(c => c['Supervise'] != null).length > 0);
+    if (isAlarm) {
       node.type = 'alarm';
+    } else {
+      node.type = 'sensor';
     }
     this.nodeArr.push(node);
     return node;

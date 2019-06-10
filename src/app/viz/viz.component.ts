@@ -135,6 +135,11 @@ export class VizComponent implements OnInit {
       ellipses[i].setAttribute('fill-opacity', this.animConf.maxFill+'');
       ellipses[i].setAttribute('animating', 'false');
     }
+    const nodes = [].slice.call(document.getElementsByClassName('node'));
+    const diamonds = nodes.map(n => n.children[1]).filter(n => n['nodeName'] == 'polygon');
+    for(let i = 0; i < diamonds.length; i++) {
+      diamonds[i].setAttribute('fill', environment.node_style_settings.alarm.color_off);
+    }    
 
     // fix node text
     const texts = document.getElementsByTagName('text');
@@ -145,8 +150,10 @@ export class VizComponent implements OnInit {
       if(texts[i].innerHTML == 'signalValue') {
         texts[i].innerHTML = '';
         texts[i].setAttribute('text-anchor', 'middle');
-        const newVal = parseInt(texts[i].getAttribute('x'), 10) + 35;
-        texts[i].setAttribute('x',  newVal.toString() );
+        const newX = parseInt(texts[i].getAttribute('x'), 10) + 35;
+        texts[i].setAttribute('x',  newX.toString() );
+        const newY = parseInt(texts[i].getAttribute('y'), 10) + 10;
+        texts[i].setAttribute('y',  newY.toString() );
         
       }
     }    
